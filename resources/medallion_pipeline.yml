@@ -1,0 +1,70 @@
+resources:
+  jobs:
+    medallion_pipeline:
+      name: "Medallion Pipeline"
+      description: >
+        End-to-end medallion architecture pipeline: Synthetic Data Generation
+        → Bronze Ingestion → Silver Transform → Gold Aggregation.
+        Set simulate_failure=true to trigger a deliberate task failure in silver_transform.
+
+      # Job-level parameters — override at run time to toggle failure simulation
+      parameters:
+        - name: catalog
+          default: ${var.catalog}
+        - name: schema
+          default: ${var.schema}
+        - name: simulate_failure
+          default: "false"
+        - name: num_records
+          default: "10000"
+
+      tasks:
+        # ── Task 1: Generate synthetic raw data ─────────────────────────────
+        - task_key: synthetic_data_gen
+          description: "Generate 10k synthetic customer transaction records."
+          notebook_task:
+            notebook_path: ../src/01_synthetic_data_gen.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              num_records: "{{job.parameters.num_records}}"
+
+        # ── Task 2: Ingest raw data into Bronze Delta layer ──────────────────
+        - task_key: bronze_ingestion
+          description: "Read raw staging table → write Bronze Delta with metadata."
+          depends_on:
+            - task_key: synthetic_data_gen
+          notebook_task:
+            notebook_path: ../src/02_bronze_ingestion.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+
+        # ── Task 3: Clean & validate into Silver layer (failure sim here) ────
+        - task_key: silver_transform
+          description: "Clean, validate, deduplicate Bronze data → Silver Delta."
+          depends_on:
+            - task_key: bronze_ingestion
+          notebook_task:
+            notebook_path: ../src/03_silver_transform.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+              simulate_failure: "{{job.parameters.simulate_failure}}"
+
+        # ── Task 4: Aggregate KPIs into Gold layer ───────────────────────────
+        - task_key: gold_aggregation
+          description: "Aggregate Silver data into Gold KPI summary tables."
+          depends_on:
+            - task_key: silver_transform
+          notebook_task:
+            notebook_path: ../src/04_gold_aggregation.py
+            base_parameters:
+              catalog: "{{job.parameters.catalog}}"
+              schema: "{{job.parameters.schema}}"
+
+      # Email notification on failure
+      email_notifications:
+        on_failure:
+          - murugaveltarun@gmail.com
+        no_alert_for_skipped_runs: true

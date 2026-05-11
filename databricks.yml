@@ -13,6 +13,9 @@ variables:
     description: The catalog to use
   schema:
     description: The schema to use
+  simulate_failure:
+    description: Set to "true" to trigger a deliberate failure in silver_transform
+    default: "false"
 
 targets:
   dev:
